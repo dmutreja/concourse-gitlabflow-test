@@ -1,0 +1,73 @@
+---
+groups:
+  - name: test-build-develop-promote-to-master
+    jobs:
+      - build-candidate
+      - build-final
+
+jobs:
+  - name: build-candidate
+    serial: true
+    plan:
+      - aggregate:
+        - {trigger: true, get: src-develop, resource: src-develop}
+        - {trigger: false, get: dev-version-semver,   params: {bump: patch}}
+
+      - put: dev-version-semver
+        params: {file: dev-version-semver/version}
+
+  - name: build-final
+    serial: true
+    plan:
+      - aggregate:
+         - {trigger: false, get: dev-version-semver}
+         - {trigger: false, get: final-version-semver,   params: {bump: major}}
+         - {trigger: true, passed: [build-candidate], get: src-develop, resource: src-develop}
+
+
+      - task: promote-to-master
+        file: src-develop/ci/tasks/promote-to-master.yml
+
+      - put: final-version-semver
+        params: {file: final-version-semver/version}
+
+      - put: src-publish
+        params: {repository: promoted/repo, rebase: true, tag_prefix: "v", tag: promoted/version}
+
+resources:
+  - name: src-publish
+    type: git
+    source:
+      uri: git@github.com:dmutreja/concourse-gitlabflow-test.git
+      branch: master
+      private_key: ((github-private-key.private_key))
+
+  - name: src-develop
+    type: git
+    source:
+      uri: https://github.com/dmutreja/concourse-gitlabflow-test.git
+      branch: develop
+      username: ((github-user.username))
+      password: ((github-user.password))
+
+  - name: dev-version-semver
+    type: semver
+    source:
+      key: gitlab-flow-version
+      bucket: pipeline-ver
+      access_key_id: ((oracle-s3-access-key-id))
+      secret_access_key: ((oracle-s3-secret-access-key))
+      region_name: ((oracle-region))
+      endpoint: https://((oracle-namespace)).compat.objectstorage.((oracle-region)).oraclecloud.com
+      initial_version:   1.0.0
+
+  - name: final-version-semver
+    type: semver
+    source:
+      key: gitlab-flow-version
+      bucket: pipeline-ver
+      access_key_id: ((oracle-s3-access-key-id))
+      secret_access_key: ((oracle-s3-secret-access-key))
+      region_name: ((oracle-region))
+      endpoint: https://((oracle-namespace)).compat.objectstorage.((oracle-region)).oraclecloud.com
+      initial_version: 1.0.0
